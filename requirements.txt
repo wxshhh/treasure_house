@@ -1,0 +1,32 @@
+# 基础依赖
+streamlit==1.22.0
+python-dotenv==1.0.0
+
+# 文档处理
+pymupdf==1.22.3
+python-docx==0.8.11
+
+# 向量存储
+chromadb==0.4.6
+pydantic==1.10.8
+
+# 大模型
+transformers==4.30.2
+torch==2.6.0
+sentencepiece==0.1.99
+protobuf==3.20.3
+tiktoken==0.4.0
+transformers_stream_generator==0.0.5
+einops==0.7.0
+accelerate==0.29.3
+bitsandbytes==0.42.0
+
+# 工具库
+numpy==1.24.3
+pandas==2.0.2
+tqdm==4.65.0
+jieba==0.42.1
+requests==2.32.3
+beautifulsoup4==4.31.
+selenium==4.30.0
+webdriver_manager==4.0.2
