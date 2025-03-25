@@ -105,6 +105,7 @@ class TextProcessor(BaseProcessor):
             "chunks": chunks,
             "metadata": metadata,
             "source": file_path,
+            "source_type": "file",
             "total_chunks": len(chunks),
         }
         return self.result

@@ -3,6 +3,6 @@
 from .pdf_processor import PDFProcessor
 from .word_processor import WordProcessor
 from .text_processor import TextProcessor
-from .zhihu_processor import ZhihuProcessor
+from .url_processor import URLProcessor
 
-__all__ = ["PDFProcessor", "WordProcessor", "TextProcessor", "ZhihuProcessor"]
+__all__ = ["PDFProcessor", "WordProcessor", "TextProcessor", "URLProcessor"]

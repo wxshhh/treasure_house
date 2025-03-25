@@ -8,11 +8,10 @@ from typing import List, Dict, Any, Optional, Callable
 
 # 导入配置和模块
 from config import APP_CONFIG, DOCUMENT_DIR, DOCUMENT_CONFIG
-from src.document_processor import PDFProcessor, WordProcessor, TextProcessor, ZhihuProcessor
+from src.document_processor import PDFProcessor, WordProcessor, TextProcessor, URLProcessor
 from src.vector_store import ChromaStore
 from src.model import create_llm, SentenceEmbedding
 from src.utils.helpers import get_document_processor, get_file_extension, get_file_size_str
-from src.utils.zhihu_crawler import ZhihuCrawler
 
 # 初始化会话状态
 if "documents" not in st.session_state:
@@ -101,14 +100,21 @@ def handle_error(error: Exception, message: str) -> None:
 def format_metadata(metadata: Dict[str, Any]) -> str:
     """格式化文档元数据"""
     formatted = []
-    if metadata.get('title'):
-        formatted.append(f"**标题**: {metadata['title']}")
-    if metadata.get('author'):
-        formatted.append(f"**作者**: {metadata['author']}")
-    if metadata.get('created'):
-        formatted.append(f"**创建时间**: {metadata['created']}")
-    if metadata.get('file_size'):
-        formatted.append(f"**大小**: {get_file_size_str(metadata['file_size'])}")
+    if metadata.get('source_type') == 'url':
+        # URL类型元数据
+        if metadata.get('url'):
+            formatted.append(f"**URL**: {metadata['url']}")
+        formatted.append(f"**来源**: 网页")
+    else:
+        # 文档类型元数据
+        if metadata.get('title'):
+            formatted.append(f"**标题**: {metadata['title']}")
+        if metadata.get('author'):
+            formatted.append(f"**作者**: {metadata['author']}")
+        if metadata.get('created'):
+            formatted.append(f"**创建时间**: {metadata['created']}")
+        if metadata.get('file_size'):
+            formatted.append(f"**大小**: {get_file_size_str(metadata['file_size'])}")
     return "\n".join(formatted)
 
 def process_document(uploaded_file):
@@ -243,15 +249,22 @@ def format_search_results(results):
             continue
             
         formatted_text += f"### 相似片段 {i+1} (相似度: {result['score']:.2f})\n"
-        formatted_text += f"**来源**: {result['metadata'].get('source', '未知')}\n"
+        
+        # 根据来源类型显示不同元数据
+        if result.get('source_type') == 'url':
+            formatted_text += f"**来源**: 网络链接🔗\n"
+            if 'url' in result['metadata']:
+                formatted_text += f"**URL**: {result['metadata']['url']}\n"
+        else:
+            formatted_text += f"**来源**: {result['metadata'].get('source', '未知')}\n"
+            if 'title' in result['metadata']:
+                formatted_text += f"**标题**: {result['metadata']['title']}\n"
         
         # 添加文档位置信息
         if 'chunk_index' in result['metadata'] and 'chunk_count' in result['metadata']:
             formatted_text += f"**位置**: 第 {result['metadata']['chunk_index'] + 1}/{result['metadata']['chunk_count']} 段\n"
         
-        # 添加其他元数据
-        if 'title' in result['metadata']:
-            formatted_text += f"**标题**: {result['metadata']['title']}\n"
+        # 添加文档特定元数据
         if 'page_count' in result['metadata']:
             formatted_text += f"**总页数**: {result['metadata']['page_count']}\n"
         
@@ -269,12 +282,12 @@ def load_model():
             st.session_state.model = create_llm()
             st.session_state.model.generate_response("你好")
 
-def process_zhihu_url(url: str) -> Dict[str, Any]:
-    """处理知乎文章链接"""
+def process_url(url: str) -> Dict[str, Any]:
+    """处理网页链接"""
     try:
-        print("开始处理知乎文章:", url)
-        # 初始化知乎处理器
-        processor = ZhihuProcessor()
+        print("开始处理网页链接:", url)
+        # 初始化URL处理器
+        processor = URLProcessor()
         
         # 初始化进度条
         progress_bar = st.progress(0)
@@ -316,25 +329,25 @@ def process_zhihu_url(url: str) -> Dict[str, Any]:
 
         processor.set_progress_callback(progress_callback)
         
-        # 处理知乎链接
+        # 处理网页链接
         result = processor.process_url(url)
         update_ui()  # 最后更新一次进度
         
         if result is None:
-            raise Exception("知乎文章处理失败")
+            raise Exception("网页链接处理失败")
             
         return result
         
     except Exception as e:
-        handle_error(e, "知乎文章处理失败")
+        handle_error(e, "网页链接处理失败")
         return None
 
 def render_document_management():
     """渲染文档管理界面"""
     st.header("文档管理")
     
-    # 创建两个选项卡：上传文档和知乎链接
-    tab1, tab2 = st.tabs(["上传文档", "知乎链接"])
+    # 创建两个选项卡：上传文档和网页链接
+    tab1, tab2 = st.tabs(["上传文档", "网页链接"])
     
     # 上传文档选项卡
     with tab1:
@@ -344,12 +357,12 @@ def render_document_management():
             help="支持PDF、Word和TXT格式"
         )
     
-    # 知乎链接选项卡
+    # 网页链接选项卡
     with tab2:
-        zhihu_url = st.text_input(
-            "知乎文章链接",
-            placeholder="请输入知乎文章链接，例如：https://zhuanlan.zhihu.com/p/xxxxxx",
-            help="支持知乎专栏文章链接"
+        url = st.text_input(
+            "网页链接",
+            placeholder="请输入网页链接，例如：https://r.jina.ai/https://zhuanlan.zhihu.com/p/xxxxxx",
+            help="支持任何网页链接"
         )
     
     if uploaded_file is not None:
@@ -365,39 +378,38 @@ def render_document_management():
                         "name": uploaded_file.name,
                         "path": os.path.join(DOCUMENT_DIR, uploaded_file.name),
                         "metadata": document_data["metadata"],
-                        "chunks": len(document_data["chunks"]),
+                        "total_chunks": len(document_data["chunks"]),
                         "ids": ids
                     })
                     st.success(f"文档 '{uploaded_file.name}' 处理成功，已添加到知识库")
     
-    if zhihu_url:
-        if st.button("处理文章", key="process_zhihu"):
-            document_data = process_zhihu_url(zhihu_url)
+    if url:
+        if st.button("处理链接", key="process_url"):
+            document_data = process_url(url)
             
             if document_data:
+                print("add_to_vector_store")
                 ids = add_to_vector_store(document_data)
                 
                 if ids:
                     st.session_state.documents.append({
-                        "name": document_data["metadata"]["title"],
-                        "path": os.path.join(DOCUMENT_DIR, f"{document_data['metadata']['title']}.txt"),
+                        "url": url,
                         "metadata": document_data["metadata"],
-                        "chunks": len(document_data["chunks"]),
+                        "total_chunks": len(document_data["chunks"]),
                         "ids": ids
                     })
-                    st.success(f"知乎文章 '{document_data['metadata']['title']}' 处理成功，已添加到知识库")
+                    st.success(f"链接 '{url}' 处理成功，已添加到知识库")
     
     if st.session_state.documents:
         st.subheader("已添加的文档")
         for i, doc in enumerate(st.session_state.documents):
-            with st.expander(f"{i+1}. {doc['name']}"):
-                st.write(f"**路径**: {doc['path']}")
+            with st.expander(f"{i+1}. {doc.get('name', doc.get('url', '未知'))}", expanded=False):
                 st.write(format_metadata(doc['metadata']))
-                st.write(f"**分块数**: {doc['chunks']}")
+                st.write(f"**分块数**: {doc['total_chunks']}")
                 if st.button("删除", key=f"delete_{i}"):
                     st.session_state.vector_store.delete(doc['ids'])
                     st.session_state.documents.pop(i)
-                    st.success(f"文档 '{doc['name']}' 已删除")
+                    st.success(f"文档 '{doc.get('name', doc.get('url', '未知'))}' 已删除")
                     st.experimental_rerun()
     else:
         st.info("尚未添加任何文档")
@@ -475,15 +487,24 @@ def render_document_browser():
     if st.session_state.documents:
         doc_data = []
         for doc in st.session_state.documents:
+            print("doc:", doc)
             metadata = doc["metadata"]
-            doc_data.append({
-                "文件名": doc["name"],
-                "大小": get_file_size_str(metadata.get("file_size", 0)),
-                "类型": get_file_extension(doc["path"]),
-                "分块数": doc["chunks"],
-                "创建时间": metadata.get("created", ""),
-                "作者": metadata.get("author", "未知")
-            })
+            row = {
+                "名称": doc.get("matedata", {}).get("title") if doc.get("source_type") == "file" else metadata.get("url", ""),
+                "类型": "网络链接" if doc.get("url") !=  "" else "上传文件",
+                "分块数": doc["total_chunks"]
+            }
+            
+            if doc.get('source_type', "file") == 'url':
+                row["URL"] = metadata.get('url', '')
+            else:
+                row.update({
+                    "大小": get_file_size_str(metadata.get("file_size", 0)),
+                    "创建时间": metadata.get("created", ""),
+                    "作者": metadata.get("author", "未知")
+                })
+            
+            doc_data.append(row)
         
         st.dataframe(pd.DataFrame(doc_data), use_container_width=True)
     else:

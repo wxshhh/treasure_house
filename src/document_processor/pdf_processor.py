@@ -19,7 +19,7 @@ class PDFProcessor(BaseProcessor):
             chunk_overlap: 分块重叠大小，默认使用配置文件中的设置
         """
         super().__init__(chunk_size, chunk_overlap)
-        self._result = None
+        self.result = None
 
     def set_progress_callback(self, callback: Callable[[str, float], None]):
         """设置进度回调函数
@@ -111,51 +111,35 @@ class PDFProcessor(BaseProcessor):
         Returns:
             包含文本块和元数据的字典
         """
-        try:
-            print(f"开始处理PDF文件: {file_path}")
-            print(f"进度回调函数是否设置: {self.progress_callback is not None}")
+        
+        # 提取元数据
+        if self.progress_callback:
+            self.progress_callback("extract_metadata", 0.5)
+        metadata = self.extract_metadata(file_path)
+        if self.progress_callback:
+            self.progress_callback("extract_metadata", 1.0)
+        
+        # 处理内容
+        text = self.extract_text(file_path)
+        
+        # 生成文本块
+        if self.progress_callback:
+            self.progress_callback("generate_chunks", 0.5)
+        chunks = self.chunk_text(text)
+        if self.progress_callback:
+            self.progress_callback("generate_chunks", 1.0)
             
-            # 初始化处理结果
-            self._result = {
-                "source": file_path,
-                "metadata": {},
-                "chunks": []
-            }
-            
-            # 提取元数据
-            print("开始提取元数据...")
-            if self.progress_callback:
-                print("调用进度回调: extract_metadata, 0.5")
-                self.progress_callback("extract_metadata", 0.5)
-            self._result["metadata"] = self.extract_metadata(file_path)
-            print(f"元数据提取完成: {self._result['metadata']}")
-            if self.progress_callback:
-                print("调用进度回调: extract_metadata, 1.0")
-                self.progress_callback("extract_metadata", 1.0)
-            
-            # 处理内容
-            print("开始提取文本内容...")
-            text = self.extract_text(file_path)
-            print(f"文本提取完成，长度: {len(text)}字符")
-            
-            # 生成文本块
-            print("开始生成文本块...")
-            if self.progress_callback:
-                print("调用进度回调: generate_chunks, 0.5")
-                self.progress_callback("generate_chunks", 0.5)
-            self._result["chunks"] = self.chunk_text(text)
-            print(f"文本块生成完成，共{len(self._result['chunks'])}个块")
-            if self.progress_callback:
-                print("调用进度回调: generate_chunks, 1.0")
-                self.progress_callback("generate_chunks", 1.0)
-            
-            print("PDF处理完成")
-            return self._result
-            
-        except Exception as e:
-            self._result = None
-            raise e
+        self.result = {
+            "source": file_path,
+            "source_type": "file",
+            "metadata": metadata,
+            "chunks": chunks,
+            "total_chunks": len(chunks)
+        }
+        
+        print("PDF处理完成")
+        return self.result
 
     def get_result(self) -> Optional[Dict[str, Any]]:
         """获取处理结果"""
-        return self._result
+        return self.result
