@@ -2,6 +2,7 @@
 
 import os
 import time
+import json
 import streamlit as st
 import pandas as pd
 from typing import List, Dict, Any, Optional, Callable
@@ -16,6 +17,15 @@ from src.utils.helpers import get_document_processor, get_file_extension, get_fi
 # 初始化会话状态
 if "documents" not in st.session_state:
     st.session_state.documents = []
+    # 尝试从持久化文件加载文档
+    try:
+        documents_file = os.path.join(DOCUMENT_DIR, "documents.json")
+        if os.path.exists(documents_file):
+            with open(documents_file, "r", encoding="utf-8") as f:
+                st.session_state.documents = json.load(f)
+    except Exception as e:
+        print(f"加载持久化文档失败: {e}")
+        st.session_state.documents = []
 
 # 添加刷新标记
 if "need_refresh" not in st.session_state:
@@ -361,7 +371,7 @@ def render_document_management():
     with tab2:
         url = st.text_input(
             "网页链接",
-            placeholder="请输入网页链接，例如：https://r.jina.ai/https://zhuanlan.zhihu.com/p/xxxxxx",
+            placeholder="请输入网页链接后点击回车键～",
             help="支持任何网页链接"
         )
     
@@ -374,13 +384,15 @@ def render_document_management():
                 ids = add_to_vector_store(document_data)
                 
                 if ids:
-                    st.session_state.documents.append({
+                    doc = {
                         "name": uploaded_file.name,
                         "path": os.path.join(DOCUMENT_DIR, uploaded_file.name),
                         "metadata": document_data["metadata"],
-                        "total_chunks": len(document_data["chunks"]),
+                        "totalchunks": len(document_data["chunks"]),
                         "ids": ids
-                    })
+                    }
+                    st.session_state.documents.append(doc)
+                    save_documents_to_disk()
                     st.success(f"文档 '{uploaded_file.name}' 处理成功，已添加到知识库")
     
     if url:
@@ -392,23 +404,27 @@ def render_document_management():
                 ids = add_to_vector_store(document_data)
                 
                 if ids:
-                    st.session_state.documents.append({
+                    doc = {
                         "url": url,
                         "metadata": document_data["metadata"],
                         "total_chunks": len(document_data["chunks"]),
                         "ids": ids
-                    })
+                    }
+                    st.session_state.documents.append(doc)
+                    save_documents_to_disk()
                     st.success(f"链接 '{url}' 处理成功，已添加到知识库")
     
     if st.session_state.documents:
         st.subheader("已添加的文档")
         for i, doc in enumerate(st.session_state.documents):
+            print("doc:", doc)
             with st.expander(f"{i+1}. {doc.get('name', doc.get('url', '未知'))}", expanded=False):
                 st.write(format_metadata(doc['metadata']))
                 st.write(f"**分块数**: {doc['total_chunks']}")
                 if st.button("删除", key=f"delete_{i}"):
                     st.session_state.vector_store.delete(doc['ids'])
                     st.session_state.documents.pop(i)
+                    save_documents_to_disk()
                     st.success(f"文档 '{doc.get('name', doc.get('url', '未知'))}' 已删除")
                     st.experimental_rerun()
     else:
@@ -509,6 +525,15 @@ def render_document_browser():
         st.dataframe(pd.DataFrame(doc_data), use_container_width=True)
     else:
         st.info("尚未添加任何文档，请在侧边栏上传文档")
+
+def save_documents_to_disk():
+    """将文档列表保存到持久化文件"""
+    try:
+        documents_file = os.path.join(DOCUMENT_DIR, "documents.json")
+        with open(documents_file, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.documents, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"保存文档持久化文件失败: {e}")
 
 def main():
     """主函数"""
